@@ -4,7 +4,7 @@ replicaCount: 2
 
 image:
   repository: ghcr.io/lalitbagga/delivery-api
-  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  digest: sha256:170bcc91b9c4bfcbdc194c004cb38d6c89094e9b49a1a128ed3a0507976fef97
   pullPolicy: IfNotPresent
 
 config:
