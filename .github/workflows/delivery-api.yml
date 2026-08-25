@@ -1,0 +1,172 @@
+name: Delivery API
+
+on:
+  pull_request:
+    paths:
+      - application/**
+      - helm/delivery-api/**
+      - gitops/environments/homelab/values.yaml
+      - scripts/update-gitops-digest.mjs
+      - scripts/test/update-gitops-digest.test.mjs
+      - .github/workflows/delivery-api.yml
+  push:
+    branches:
+      - main
+    paths:
+      - application/**
+      - scripts/update-gitops-digest.mjs
+      - scripts/test/update-gitops-digest.test.mjs
+      - .github/workflows/delivery-api.yml
+  workflow_dispatch:
+
+concurrency:
+  group: delivery-api-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: 24.12.0
+  HELM_VERSION: 4.1.1
+  HELM_ARCHIVE_SHA256: 5d4c7623283e6dfb1971957f4b755468ab64917066a8567dd50464af298f4031
+  VALUES_FILE: gitops/environments/homelab/values.yaml
+
+jobs:
+  validate:
+    name: Test application and promotion logic
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: application/package-lock.json
+
+      - name: Test application
+        working-directory: application
+        run: npm test
+
+      - name: Test digest promotion logic
+        run: node --test scripts/test/update-gitops-digest.test.mjs
+
+      - name: Install pinned Helm
+        run: |
+          archive="$RUNNER_TEMP/helm.tar.gz"
+          curl --fail --silent --show-error --location \
+            "https://get.helm.sh/helm-v${HELM_VERSION}-linux-amd64.tar.gz" \
+            --output "$archive"
+          echo "$HELM_ARCHIVE_SHA256  $archive" | sha256sum --check
+          tar --extract --gzip --file "$archive" --directory "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/linux-amd64" >> "$GITHUB_PATH"
+
+      - name: Validate Helm packaging
+        run: |
+          helm lint --strict helm/delivery-api --values "$VALUES_FILE"
+          helm template delivery-api helm/delivery-api \
+            --namespace delivery-api \
+            --values "$VALUES_FILE" \
+            > "$RUNNER_TEMP/delivery-api.yaml"
+
+      - name: Confirm desired state uses an immutable digest
+        run: |
+          digest="$(awk '$1 == "digest:" { print $2 }' "$VALUES_FILE")"
+          if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "GitOps desired state does not contain a SHA-256 image digest" >&2
+            exit 1
+          fi
+
+  publish:
+    name: Publish image and propose digest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Log in to GitHub Container Registry
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and publish commit-addressed AMD64 image
+        id: image
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/delivery-api
+        run: |
+          image_name="${IMAGE_NAME,,}"
+          docker buildx build \
+            --platform linux/amd64 \
+            --build-arg "APP_VERSION=$GITHUB_SHA" \
+            --tag "$image_name:$GITHUB_SHA" \
+            --provenance=mode=max \
+            --sbom=true \
+            --metadata-file /tmp/delivery-api-build.json \
+            --push \
+            application
+
+          digest="$(jq --raw-output '."containerimage.digest"' /tmp/delivery-api-build.json)"
+          if [[ ! "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "Build did not return a valid registry digest" >&2
+            exit 1
+          fi
+
+          echo "name=$image_name" >> "$GITHUB_OUTPUT"
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Update desired state
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: node scripts/update-gitops-digest.mjs "$VALUES_FILE" "$IMAGE_DIGEST"
+
+      - name: Open promotion pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          IMAGE_NAME: ${{ steps.image.outputs.name }}
+        run: |
+          short_sha="${GITHUB_SHA:0:12}"
+          branch="automation/promote-delivery-api-$short_sha"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch --create "$branch"
+          git add "$VALUES_FILE"
+
+          if git diff --cached --quiet; then
+            echo "Desired state already declares $IMAGE_DIGEST"
+            exit 0
+          fi
+
+          git commit -m "Promote delivery-api $short_sha"
+          git push --set-upstream origin "$branch"
+
+          printf '%s\n\n%s\n\n%s\n' \
+            "Updates the homelab desired state to immutable image digest \`$IMAGE_DIGEST\` from application commit \`$GITHUB_SHA\`." \
+            "Image: \`$IMAGE_NAME@$IMAGE_DIGEST\`" \
+            "CI stops at this pull request. Argo CD performs cluster reconciliation only after review and merge." \
+            > "$RUNNER_TEMP/promotion-pr-body.md"
+
+          gh pr create \
+            --base main \
+            --head "$branch" \
+            --title "Promote delivery-api $short_sha" \
+            --body-file "$RUNNER_TEMP/promotion-pr-body.md"

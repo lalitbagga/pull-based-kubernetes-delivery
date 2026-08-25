@@ -1,0 +1,20 @@
+# Secrets and local access
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.kubeconfig
+kubeconfig
+
+# Raw or sensitive evidence
+evidence/raw/*
+!evidence/raw/README.md
+
+# Helm and tooling output
+charts/
+*.tgz
+coverage/
+node_modules/
+.DS_Store

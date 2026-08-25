@@ -1,0 +1,13 @@
+{
+  "name": "delivery-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Small HTTP API used to prove pull-based Kubernetes delivery.",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
