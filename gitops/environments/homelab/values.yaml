@@ -9,4 +9,4 @@ image:
   pullPolicy: IfNotPresent
 
 config:
-  readinessMode: fail
+  readinessMode: ready
