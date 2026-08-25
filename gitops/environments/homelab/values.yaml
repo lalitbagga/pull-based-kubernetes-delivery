@@ -1,6 +1,7 @@
 # Argo CD will merge this file over the chart defaults for the homelab release.
 # CI changes only image.digest. A human reviews and merges that promotion PR.
 replicaCount: 2
+fullnameOverride: delivery-api
 
 image:
   repository: ghcr.io/lalitbagga/delivery-api

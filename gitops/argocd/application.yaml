@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: delivery-api
+  namespace: argocd
+spec:
+  project: delivery-api
+  sources:
+    - repoURL: https://github.com/lalitbagga/pull-based-kubernetes-delivery.git
+      targetRevision: main
+      path: helm/delivery-api
+      helm:
+        releaseName: delivery-api
+        valueFiles:
+          - $values/gitops/environments/homelab/values.yaml
+    - repoURL: https://github.com/lalitbagga/pull-based-kubernetes-delivery.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: delivery-api
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ApplyOutOfSyncOnly=true
+      - CreateNamespace=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
