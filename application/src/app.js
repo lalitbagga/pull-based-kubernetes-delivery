@@ -35,7 +35,10 @@ function createApp(options = {}) {
         }
         return sendJson(response, 200, { status: 'ready' })
       case '/version':
-        return sendJson(response, 200, { version })
+        return sendJson(response, 200, {
+          service: 'delivery-api',
+          version
+        })
       case '/metrics': {
         const uptimeSeconds = Math.floor((Date.now() - startedAt) / 1000)
         response.writeHead(200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' })

@@ -32,7 +32,10 @@ test('readiness reports a ready application', async () => {
 test('version exposes the immutable build identifier', async () => {
   const response = await fetch(`${baseUrl}/version`)
   assert.equal(response.status, 200)
-  assert.deepEqual(await response.json(), { version: 'test-sha' })
+  assert.deepEqual(await response.json(), {
+    service: 'delivery-api',
+    version: 'test-sha'
+  })
 })
 
 test('readiness can fail without failing liveness', async () => {
