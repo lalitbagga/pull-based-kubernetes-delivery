@@ -5,7 +5,7 @@ fullnameOverride: delivery-api
 
 image:
   repository: ghcr.io/lalitbagga/delivery-api
-  digest: sha256:170bcc91b9c4bfcbdc194c004cb38d6c89094e9b49a1a128ed3a0507976fef97
+  digest: sha256:f8303e07e737f40fa5479b73a148261cf4221f4d4b52ebf095b74d2cb4ef5be5
   pullPolicy: IfNotPresent
 
 config:
