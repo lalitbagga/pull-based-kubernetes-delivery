@@ -108,6 +108,11 @@ replicas. The bad release was detected 49 seconds after merge.
 A Git revert restored the known-good declaration. Argo CD returned the
 Application to `Synced` and `Healthy` 42 seconds after the revert commit.
 
+A later application release was measured with Argo CD already active. Argo CD
+started reconciliation 32 seconds after the promotion PR merged, and the two
+updated replicas were healthy 43 seconds after merge. The in-cluster rollout
+took 11 seconds from reconciliation start to the healthy observation.
+
 ## Verified acceptance checks
 
 - [x] Representative API with liveness, readiness, version, and metrics.

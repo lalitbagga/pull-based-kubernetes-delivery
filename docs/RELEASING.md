@@ -72,6 +72,7 @@ truth. Follow [the operator runbook](OPERATIONS.md) for diagnosis and recovery.
 ## Evidence
 
 The verified delivery and controlled recovery experiments are retained in the
-repository's [evidence directory](../evidence/). The initial digest promotion
-occurred before Argo CD bootstrap, so it is not presented as one continuously
-timed promotion-to-healthy rollout.
+repository's [evidence directory](../evidence/). A later application release was
+timed continuously with Argo CD already active; its promotion merge, Argo CD
+operation start, and healthy rollout are retained in
+[the timed-release evidence](../evidence/05-timed-post-argocd-release.md).

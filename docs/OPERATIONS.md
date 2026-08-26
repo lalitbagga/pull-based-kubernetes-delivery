@@ -153,4 +153,5 @@ The commands and decisions in this runbook map to retained evidence:
 - [baseline and drift correction](../evidence/01-baseline-and-drift.md);
 - [bad readiness and Git-revert recovery](../evidence/02-bad-readiness-and-revert.md);
 - [isolated Helm lifecycle validation](../evidence/03-helm-lifecycle.md); and
-- [final Git, Argo CD, and runtime agreement](../evidence/04-final-state-agreement.md).
+- [final Git, Argo CD, and runtime agreement](../evidence/04-final-state-agreement.md); and
+- [a timed release with Argo CD already active](../evidence/05-timed-post-argocd-release.md).

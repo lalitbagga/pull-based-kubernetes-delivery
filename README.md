@@ -45,6 +45,7 @@ direct Helm release, or Argo CD credential.
 | Durable recovery through Git revert | 42-second recovery in [failure evidence](evidence/02-bad-readiness-and-revert.md) |
 | Helm install, test, upgrade, rollback, uninstall, and fresh install | [Helm lifecycle evidence](evidence/03-helm-lifecycle.md) |
 | Final Git, Argo CD, Deployment, Pod image ID, and application version agreement | [Final-state evidence](evidence/04-final-state-agreement.md) |
+| Fresh release with Argo CD already active | 32-second detection and 43-second merge-to-healthy result in [timed-release evidence](evidence/05-timed-post-argocd-release.md) |
 
 The failed rollout retained two ready replicas while a replacement pod failed
 readiness. A sampled request through the private Service succeeded. This is not
