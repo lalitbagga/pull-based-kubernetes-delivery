@@ -1,101 +1,138 @@
 # Pull-based delivery architecture
 
-Status: implementation in progress. Claims remain unverified until retained
-cluster evidence passes the project exit gates.
+Status: verified for the documented single-node home-lab scope on 2026-08-25.
 
-## Representative workload decision
+## Representative workload
 
-The project uses `application/delivery-api`, a small public HTTP service with
-health, readiness, version, and metrics endpoints. It has no database, external
-dependency, personal data, runtime credential, or Secret. It is more useful than
-a static Nginx page while remaining safe on the constrained server.
+`application/delivery-api` is a small public HTTP service with health,
+readiness, version, and metrics endpoints. It has no database, external runtime
+dependency, personal data, credential, or Kubernetes Secret.
 
-A bad release can set `config.readinessMode: fail` through Git. The process stays
-alive, but Kubernetes removes the new Pod from Service endpoints because `/ready`
-returns HTTP 503. This separates application liveness from traffic eligibility.
+A Git value can set `config.readinessMode: fail`. The process remains live, but
+the readiness endpoint returns HTTP 503. This creates a meaningful failed
+release without crashing the process or risking persistent data.
 
 ## Ownership boundary
 
-| Component | Owns | May not do |
-|---|---|---|
-| Application source | Code, tests, Dockerfile, commit version | Change the live cluster |
-| Application CI | Test, build, publish a commit-tagged image, propose a digest PR | Hold kubeconfig or call the Kubernetes API |
-| Helm chart | Repeatable Kubernetes object templates and safe defaults | Select a logically correct release |
-| GitOps desired state | Environment replica count, readiness mode, and immutable image digest | Mutate the cluster by itself |
-| Human reviewer | Accept or reject the proposed environment change | Bypass Git as the durable repair |
-| Argo CD | Compare Git with live state and reconcile approved declarations | Build images or decide that a bad declaration is correct |
-| Kubernetes | Run workloads and report rollout and health state | Change the durable Git declaration |
+| Component | Owns | Does not own |
+| --- | --- | --- |
+| Application source | Code, tests, Dockerfile, commit version | Live cluster state |
+| Application CI | Test, publish the image, propose a digest PR | Kubernetes deployment |
+| Helm chart | Kubernetes templates, schema, and safe defaults | Environment version selection |
+| GitOps desired state | Replica count, readiness mode, immutable image digest | Direct cluster mutation |
+| Human reviewer | Accept or reject the declared release | Controller reconciliation |
+| Argo CD | Compare Git with live state and reconcile | Image builds or release correctness |
+| Kubernetes | Run workloads and report rollout health | Durable desired state in Git |
 
-No Terraform module, CI workflow, or manual Helm release will co-own the
-delivery-api Deployment after Argo CD assumes ownership.
+No Terraform module, CI workflow, or manual Helm release co-owns the
+Argo-managed `delivery-api` Deployment. Helm lifecycle tests use separate
+disposable namespaces.
 
-## Credential boundary
+## Credential and authority boundary
 
-The application workflow receives GitHub's short-lived job token with these
-job-scoped permissions:
+The workflow begins with repository read permission. Only the main-branch
+publication job receives job-scoped permission to publish the GHCR package,
+push an automation branch, and open the promotion pull request.
 
-- read repository content during validation;
-- publish only through the repository's GHCR permission;
-- create a branch and promotion pull request during the publish job.
+It receives no kubeconfig, Kubernetes token, cluster address, SSH credential,
+or Argo CD credential. Workflow inspection confirms no `kubectl`, direct
+`helm install` or `helm upgrade`, or Kubernetes API call.
 
-It receives no kubeconfig, Kubernetes token, cluster address, SSH credential, or
-Argo CD credential. The workflow contains no `kubectl`, direct `helm install` or
-`helm upgrade`, or Kubernetes API call.
-
-The intended portfolio repository and image are public after a separate
-sanitization review. That avoids a registry pull secret and an Argo CD repository
-credential in the first lab iteration. If either remains private, credentials
-must be supplied out of band and must never be committed or retained in rendered
-evidence.
+The repository and image are public. Argo CD therefore needs no Git credential,
+and Kubernetes needs no GHCR pull secret for this workload.
 
 ## Desired release path
 
-1. A commit reaches `main`.
-2. CI tests the API and digest-update logic.
-3. CI builds an AMD64 image with the full commit SHA baked into `/version`.
-4. CI pushes only the commit-SHA tag and records the registry SHA-256 digest.
-5. CI opens a pull request changing only the homelab digest.
-6. A human reviews and merges the declaration.
-7. Argo CD detects the Git change and reconciles the private k3s cluster.
-8. `/version`, the Pod `imageID`, and Git prove commit, artifact, and deployment.
+1. An application change is reviewed and merged to `main`.
+2. CI tests the API and digest-promotion logic.
+3. CI builds a Linux AMD64 image with the full commit SHA in `/version`.
+4. CI publishes the commit tag with SBOM and provenance attestations.
+5. CI resolves the registry digest and opens a promotion pull request.
+6. A human verifies that the pull request changes only the desired digest.
+7. After merge, Argo CD pulls `main` and combines the chart with the homelab
+   values file.
+8. Kubernetes rolls out the declared digest and reports health.
 
-CI stops after step 5. It does not deploy.
+CI stops after proposing the Git change. It never deploys or rolls back the
+cluster.
 
-## Cluster boundary and resource posture
+## Argo CD design
 
-- Workload namespace: `delivery-api`
-- Argo CD namespace: `argocd`
-- Application exposure: ClusterIP initially; no public Ingress
-- Argo CD exposure: ClusterIP only; temporary authenticated port-forward when needed
-- Node architecture: AMD64
-- Baseline: 6/6 Pods Ready; node Ready with no reported pressure
-- Baseline utilization: 13% CPU and 70% memory at the observed snapshot
+The platform bootstrap pins Argo CD Core v3.5.1 to immutable upstream commit
+`109ca7ca71139e514114499d294a492e7910a965`.
 
-Because memory use is already significant, Argo CD will use a non-HA,
-single-cluster lab profile with optional controllers disabled unless required.
-Resource use must be recorded before and after installation. Installation stops
-if existing workload health declines.
+Core mode was selected because the single-cluster lab does not need a permanent
+API server, UI, OIDC, notifications, or multi-tenant RBAC. Four internal
+components run with explicit requests and limits. Every Service is `ClusterIP`.
 
-## Current limitations and blockers
+The `delivery-api` AppProject permits only:
 
-- This local repository has no Git remote, so CI, GHCR publication, and promotion
-  pull requests cannot run yet.
-- The all-zero digest is a schema-validation placeholder, not a deployable image.
-- Helm cluster install, upgrade, rollback, uninstall, and fresh-install gates are
-  not yet demonstrated.
-- Argo CD is not installed and no reconciliation claim is verified.
-- No drift, bad-release, or Git-revert timing evidence exists yet.
+- the public project repository;
+- the in-cluster `delivery-api` namespace; and
+- the resource types rendered by this chart.
 
-## Acceptance checks
+The Application enables:
 
-- [x] API tests pass locally.
-- [x] AMD64 container builds and passes a restricted-runtime smoke test.
-- [x] Commit identity is baked into the image and returned by `/version`.
-- [x] Helm strict lint and render pass with digest-only desired state.
-- [x] Promotion updater accepts one SHA-256 digest and rejects unsafe input.
-- [x] CI workflow contains no cluster deployment authority.
-- [ ] Repository sanitization review and Git remote are complete.
-- [ ] CI publishes an immutable image and opens the first promotion PR.
-- [ ] Helm lifecycle validation passes against k3s.
-- [ ] Minimal private Argo CD installation stays within the resource envelope.
-- [ ] Drift, bad readiness, and Git-revert experiments are retained and timed.
+- automated sync, so merged Git changes are pulled without a CI deployment;
+- pruning, so resources removed from Git are removed from the release; and
+- self-healing, so unauthorized live drift is restored to the Git declaration.
+
+Pruning and self-healing can also faithfully apply a harmful declaration. The
+review boundary, Kubernetes readiness, Argo health, and Git revert remain part
+of the safety model.
+
+## Resource posture
+
+The host snapshot before installation showed no memory, disk, or PID pressure.
+The four Argo CD Core pods became ready with zero restarts.
+
+| Component | Observed CPU | Observed memory |
+| --- | ---: | ---: |
+| Application controller | 2m | 30 MiB |
+| ApplicationSet controller | 1m | 21 MiB |
+| Redis | 14m | 9 MiB |
+| Repository server | 2m | 25 MiB |
+| **Total** | **19m** | **85 MiB** |
+
+These measurements are a home-lab snapshot, not production sizing guidance.
+
+## Failure and recovery behavior
+
+Manual replica drift was observed as `OutOfSync` and corrected in 42 seconds.
+
+A valid Git change set readiness to fail. Argo CD became `Synced` because the
+cluster matched Git, while health became `Progressing` because the rollout could
+not make the new Pod ready. The rolling-update policy retained two ready old
+replicas. The bad release was detected 49 seconds after merge.
+
+A Git revert restored the known-good declaration. Argo CD returned the
+Application to `Synced` and `Healthy` 42 seconds after the revert commit.
+
+## Verified acceptance checks
+
+- [x] Representative API with liveness, readiness, version, and metrics.
+- [x] Application and digest-promotion tests.
+- [x] Strict Helm lint and digest-only rendering.
+- [x] Helm install, test, upgrade, rollback, uninstall, and fresh install.
+- [x] Public immutable image with commit identity, SBOM, and provenance.
+- [x] Automated digest-promotion pull request.
+- [x] CI with no cluster credential or deployment command.
+- [x] Pinned, private, healthy, resource-limited Argo CD Core.
+- [x] Healthy pull-based reconciliation.
+- [x] Manual drift detection and correction.
+- [x] Bad readiness release and retained health evidence.
+- [x] Durable Git-revert recovery with measured timing.
+- [x] Sanitized public evidence, operator runbook, and release guide.
+
+## Limitations
+
+- Single-node k3s cannot demonstrate control-plane or workload high
+  availability.
+- A sampled successful request does not prove zero request loss.
+- AppProject policy narrows this Application's declared scope, but the Argo CD
+  controller remains a privileged in-cluster reconciler.
+- Repository compromise can still produce harmful desired state.
+- No progressive-delivery controller, admission policy, multi-cluster
+  promotion, or production SLO is claimed.
+
+See [the retained evidence](../evidence/) and [operator runbook](OPERATIONS.md).
