@@ -48,10 +48,14 @@
     "service": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "port"],
+      "required": ["type", "port", "annotations"],
       "properties": {
-        "type": { "type": "string", "enum": ["ClusterIP"] },
-        "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        "type": { "type": "string", "enum": ["ClusterIP", "LoadBalancer"] },
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
       }
     },
     "config": {

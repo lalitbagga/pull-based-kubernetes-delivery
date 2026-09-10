@@ -1,0 +1,20 @@
+# EKS reuses the verified chart and immutable image. Only the environment edge
+# changes: the AWS Load Balancer Controller creates a temporary public NLB.
+replicaCount: 2
+fullnameOverride: delivery-api
+
+image:
+  repository: ghcr.io/lalitbagga/delivery-api
+  digest: sha256:f8303e07e737f40fa5479b73a148261cf4221f4d4b52ebf095b74d2cb4ef5be5
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 80
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: external
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+    service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+
+config:
+  readinessMode: ready
