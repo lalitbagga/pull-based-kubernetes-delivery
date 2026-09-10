@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: delivery-api
+  namespace: argocd
+spec:
+  description: Restricts delivery-api reconciliation to its public repository and namespace.
+  sourceRepos:
+    - https://github.com/lalitbagga/pull-based-kubernetes-delivery.git
+  destinations:
+    - namespace: delivery-api
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Pod
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
